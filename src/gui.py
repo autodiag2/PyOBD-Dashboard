@@ -3,7 +3,7 @@ import json
 import os
 import time
 from tkinter import filedialog, messagebox
-from collections import deque 
+from collections import deque, defaultdict 
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -44,11 +44,10 @@ class DashboardApp(ctk.CTk):
         self.dashboard_dirty = False 
 
         # GRAPH DATA STORAGE 
-        self.history_rpm = deque([0]*60, maxlen=60)
-        self.history_speed = deque([0]*60, maxlen=60)
+        self.sensor_history = defaultdict(lambda: deque([0]*60, maxlen=60))
 
         # Window Setup
-        self.title("PyOBD Professional - Performance Edition")
+        self.title("PyOBD Professional - Ultimate Edition")
         self.geometry("1100x800") 
         ctk.set_appearance_mode("dark")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -63,7 +62,7 @@ class DashboardApp(ctk.CTk):
         self.tab_settings = self.tabview.add("Settings")
         self.tab_debug = self.tabview.add("Debug Log")
         
-        # 1. Load Sensors
+        # 1. Load Sensors (Back-end)
         self.reload_sensor_definitions()
 
         # 2. UI Setup
@@ -72,6 +71,9 @@ class DashboardApp(ctk.CTk):
         self._setup_diagnostics_tab()
         self._setup_settings_tab()
         self._setup_debug_tab()
+        
+        # 3. Finalize Setup (Now that UI exists, populate dropdowns)
+        self.update_graph_dropdowns()
         
         if "log_dir" in self.config:
             self.logger.set_directory(self.config["log_dir"])
@@ -95,11 +97,6 @@ class DashboardApp(ctk.CTk):
                         full = os.path.join(root, f)
                         rel = os.path.relpath(full, PRO_PACK_DIR)
                         
-                        # Normalize path separators for config compatibility
-                        # (Windows uses \, Config might store /)
-                        # We just check if the relative path ends with the stored config string
-                        # or direct match
-                        
                         match = False
                         for p in enabled_packs:
                             if os.path.normpath(p) == os.path.normpath(rel):
@@ -112,13 +109,14 @@ class DashboardApp(ctk.CTk):
                                     pro_data = json.load(json_file)
                                     for key, val in pro_data.items():
                                         self.available_sensors[key] = tuple(val[:5])
-                                        self.sensor_sources[key] = rel # Tag source
+                                        self.sensor_sources[key] = rel 
                                     print(f"Loaded Pack: {rel}")
                             except Exception as e:
                                 print(f"Error loading {rel}: {e}")
         
         self.obd.set_pro_definitions(self.available_sensors)
         self._init_sensor_state()
+        self.update_graph_dropdowns() 
 
     def _init_sensor_state(self):
         old_state = self.sensor_state if hasattr(self, 'sensor_state') else {}
@@ -131,7 +129,6 @@ class DashboardApp(ctk.CTk):
                 is_show = old_state[cmd]["show_var"].get()
                 is_log = old_state[cmd]["log_var"].get()
                 limit_val = old_state[cmd]["limit_var"].get()
-                # Preserve widget references (Cache)
                 card = old_state[cmd].get("card_widget", None)
                 val_lbl = old_state[cmd].get("widget_value_label", None)
                 bar = old_state[cmd].get("widget_progress_bar", None)
@@ -152,7 +149,7 @@ class DashboardApp(ctk.CTk):
                 "widget_progress_bar": bar
             }
 
-    # --- DASHBOARD TAB (OPTIMIZED CACHE) ---
+    # --- DASHBOARD TAB ---
     def _setup_dashboard_tab(self):
         self.frame_controls = ctk.CTkFrame(self.tab_dash, height=50)
         self.frame_controls.pack(fill="x", padx=10, pady=5)
@@ -165,13 +162,10 @@ class DashboardApp(ctk.CTk):
         self.dashboard_dirty = True
 
     def rebuild_dashboard_grid(self):
-        """OPTIMIZED: Hides/Shows widgets instead of destroying them."""
-        # 1. Unmap all existing cards (don't destroy)
         for cmd, state in self.sensor_state.items():
             if state["card_widget"]:
                 state["card_widget"].grid_forget()
 
-        # 2. Map only the active ones
         active_sensors = [k for k, v in self.sensor_state.items() if v["show_var"].get()]
         cols = 3
         
@@ -179,11 +173,9 @@ class DashboardApp(ctk.CTk):
             row = i // cols; col = i % cols
             state = self.sensor_state[cmd]
             
-            # Check Cache
             card = state["card_widget"]
             
             if card is None:
-                # Create if doesn't exist
                 card = ctk.CTkFrame(self.dash_scroll)
                 self.dash_scroll.grid_columnconfigure(col, weight=1)
                 
@@ -198,47 +190,93 @@ class DashboardApp(ctk.CTk):
                 bar.set(0)
                 bar.pack(pady=(0,15))
                 
-                # Store in Cache
                 state["card_widget"] = card
                 state["widget_value_label"] = val_lbl
                 state["widget_progress_bar"] = bar
 
-            # Place it
             card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
             
         self.dashboard_dirty = False 
 
     # --- LIVE GRAPH TAB ---
     def _setup_graph_tab(self):
+        # 1. Controls Area
+        controls = ctk.CTkFrame(self.tab_graph)
+        controls.pack(fill="x", padx=10, pady=5)
+        
+        # Left Axis Selector
+        ctk.CTkLabel(controls, text="Left Axis (Blue):", text_color="#3498db", font=("Arial", 12, "bold")).pack(side="left", padx=5)
+        self.var_graph_left = ctk.StringVar(value="RPM")
+        self.menu_left = ctk.CTkOptionMenu(controls, variable=self.var_graph_left, values=["RPM"])
+        self.menu_left.pack(side="left", padx=5)
+
+        # Right Axis Selector
+        ctk.CTkLabel(controls, text="Right Axis (Red):", text_color="#e74c3c", font=("Arial", 12, "bold")).pack(side="left", padx=5)
+        self.var_graph_right = ctk.StringVar(value="SPEED")
+        self.menu_right = ctk.CTkOptionMenu(controls, variable=self.var_graph_right, values=["SPEED"])
+        self.menu_right.pack(side="left", padx=5)
+
+        # 2. Graph Area
         self.fig, self.ax1 = plt.subplots(figsize=(6, 4), dpi=100)
         self.fig.patch.set_facecolor('#2b2b2b') 
+        
         self.ax1.set_facecolor('#2b2b2b')
-        self.ax1.set_ylabel('RPM', color='#3498db', fontsize=12, fontweight='bold')
         self.ax1.tick_params(axis='y', labelcolor='#3498db', colors='white')
         self.ax1.tick_params(axis='x', colors='white')
         self.ax1.grid(True, color='#404040', linestyle='--', alpha=0.5)
-        self.ax1.set_ylim(0, 7000)
+
         self.ax2 = self.ax1.twinx()
-        self.ax2.set_ylabel('Speed (km/h)', color='#e74c3c', fontsize=12, fontweight='bold')
         self.ax2.tick_params(axis='y', labelcolor='#e74c3c', colors='white')
         self.ax2.spines['bottom'].set_color('white'); self.ax2.spines['top'].set_color('white') 
         self.ax2.spines['left'].set_color('white'); self.ax2.spines['right'].set_color('white')
-        self.ax2.set_ylim(0, 160)
-        self.line_rpm, = self.ax1.plot([], [], color='#3498db', linewidth=2, label="RPM")
-        self.line_speed, = self.ax2.plot([], [], color='#e74c3c', linewidth=2, label="Speed")
+
+        self.line_rpm, = self.ax1.plot([], [], color='#3498db', linewidth=2)
+        self.line_speed, = self.ax2.plot([], [], color='#e74c3c', linewidth=2)
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.tab_graph)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
 
+    def update_graph_dropdowns(self):
+        """Refreshes the dropdowns with all available sensors"""
+        # CRASH FIX: Check if menu_left exists before configuring it
+        if not hasattr(self, 'menu_left') or not hasattr(self, 'menu_right'):
+            return
+
+        options = sorted(list(self.available_sensors.keys()))
+        self.menu_left.configure(values=options)
+        self.menu_right.configure(values=options)
+
     def update_graph(self):
-        x_data = list(range(len(self.history_rpm)))
-        self.line_rpm.set_data(x_data, self.history_rpm)
-        self.line_speed.set_data(x_data, self.history_speed)
-        self.ax1.set_xlim(0, len(self.history_rpm))
-        self.ax2.set_xlim(0, len(self.history_speed))
+        left_key = self.var_graph_left.get()
+        right_key = self.var_graph_right.get()
+        
+        data_left = self.sensor_history[left_key]
+        data_right = self.sensor_history[right_key]
+        x_data = list(range(len(data_left)))
+
+        self.line_rpm.set_data(x_data, data_left)
+        self.line_speed.set_data(x_data, data_right)
+        
+        if data_left:
+            max_l = max(data_left) if max(data_left) > 0 else 100
+            self.ax1.set_ylim(0, max_l * 1.2) 
+            self.ax1.set_xlim(0, len(data_left))
+            
+        if data_right:
+            max_r = max(data_right) if max(data_right) > 0 else 100
+            self.ax2.set_ylim(0, max_r * 1.2)
+            self.ax2.set_xlim(0, len(data_right))
+
+        name_left = self.sensor_state[left_key]["name"] if left_key in self.sensor_state else left_key
+        name_right = self.sensor_state[right_key]["name"] if right_key in self.sensor_state else right_key
+        
+        self.ax1.set_ylabel(name_left, color='#3498db', fontsize=10, fontweight='bold')
+        self.ax2.set_ylabel(name_right, color='#e74c3c', fontsize=10, fontweight='bold')
+
         self.canvas.draw_idle()
 
-    # --- SETTINGS TAB (OPTIMIZED & FILTERED) ---
+    # --- SETTINGS TAB ---
     def _setup_settings_tab(self):
         frame_top = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
         frame_top.pack(fill="x", padx=20, pady=10)
@@ -424,7 +462,6 @@ class DashboardApp(ctk.CTk):
             current_speed = 0
 
             for cmd, state in self.sensor_state.items():
-                # Optimized Query: Only query if visible OR logging OR critical
                 is_visible = state["show_var"].get()
                 is_logging = state["log_var"].get()
                 
@@ -432,6 +469,7 @@ class DashboardApp(ctk.CTk):
                     val = self.obd.query_sensor(cmd)
                     if val is not None:
                         data_snapshot[cmd] = val
+                        self.sensor_history[cmd].append(val)
                         if cmd == "SPEED": current_speed = val
                         
                         if is_visible:
@@ -450,14 +488,8 @@ class DashboardApp(ctk.CTk):
                                     progress = min(val / limit, 1.0) 
                                     state["widget_progress_bar"].set(progress)
                                     state["widget_progress_bar"].configure(progress_color=color)
-
                             except ValueError: pass
 
-            rpm_val = data_snapshot.get("RPM", 0)
-            speed_val = data_snapshot.get("SPEED", 0)
-            self.history_rpm.append(rpm_val)
-            self.history_speed.append(speed_val)
-            
             if self.tabview.get() == "Live Graph":
                 self.update_graph()
 
