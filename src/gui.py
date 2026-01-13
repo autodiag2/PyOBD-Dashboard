@@ -39,7 +39,8 @@ class DashboardApp(ctk.CTk):
         
         self.config = ConfigManager.load_config()
         self.sensor_state = {} 
-        self.available_sensors = {} 
+        self.available_sensors = {}
+        self.sensor_sources = {} 
         self.dashboard_dirty = False 
 
         # GRAPH DATA STORAGE 
@@ -47,7 +48,7 @@ class DashboardApp(ctk.CTk):
         self.history_speed = deque([0]*60, maxlen=60)
 
         # Window Setup
-        self.title("PyOBD Professional - Ultimate Edition")
+        self.title("PyOBD Professional - Performance Edition")
         self.geometry("1100x800") 
         ctk.set_appearance_mode("dark")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -79,34 +80,42 @@ class DashboardApp(ctk.CTk):
         self.rebuild_dashboard_grid()
         self.update_loop()
 
-    # --- SENSOR LOADING LOGIC (RECURSIVE FIX) ---
+    # --- SENSOR LOADING LOGIC ---
     def reload_sensor_definitions(self):
-        """Rebuilds the master sensor list based on Standard + Enabled Pro Packs"""
+        """Rebuilds the master sensor list"""
         self.available_sensors = STANDARD_SENSORS.copy()
+        self.sensor_sources = {k: "Standard" for k in STANDARD_SENSORS}
         
         enabled_packs = self.config.get("enabled_packs", [])
         
         if os.path.exists(PRO_PACK_DIR):
-            # Walk through all subfolders
             for root, dirs, files in os.walk(PRO_PACK_DIR):
-                for file in files:
-                    if file.endswith(".json"):
-                        # Get relative path (e.g., "Toyota/Prius.json")
-                        # This ensures we match the stored config format
-                        full_path = os.path.join(root, file)
-                        rel_path = os.path.relpath(full_path, PRO_PACK_DIR)
+                for f in files:
+                    if f.endswith(".json"):
+                        full = os.path.join(root, f)
+                        rel = os.path.relpath(full, PRO_PACK_DIR)
                         
-                        # Fix path separators for Windows/Linux compatibility in config
-                        # We store paths using the OS separator
-                        if rel_path in enabled_packs:
+                        # Normalize path separators for config compatibility
+                        # (Windows uses \, Config might store /)
+                        # We just check if the relative path ends with the stored config string
+                        # or direct match
+                        
+                        match = False
+                        for p in enabled_packs:
+                            if os.path.normpath(p) == os.path.normpath(rel):
+                                match = True
+                                break
+                        
+                        if match:
                             try:
-                                with open(full_path, 'r') as f:
-                                    pro_data = json.load(f)
+                                with open(full, 'r') as json_file:
+                                    pro_data = json.load(json_file)
                                     for key, val in pro_data.items():
                                         self.available_sensors[key] = tuple(val[:5])
-                                    print(f"Loaded Pack: {rel_path}")
+                                        self.sensor_sources[key] = rel # Tag source
+                                    print(f"Loaded Pack: {rel}")
                             except Exception as e:
-                                print(f"Error loading {rel_path}: {e}")
+                                print(f"Error loading {rel}: {e}")
         
         self.obd.set_pro_definitions(self.available_sensors)
         self._init_sensor_state()
@@ -122,22 +131,28 @@ class DashboardApp(ctk.CTk):
                 is_show = old_state[cmd]["show_var"].get()
                 is_log = old_state[cmd]["log_var"].get()
                 limit_val = old_state[cmd]["limit_var"].get()
+                # Preserve widget references (Cache)
+                card = old_state[cmd].get("card_widget", None)
+                val_lbl = old_state[cmd].get("widget_value_label", None)
+                bar = old_state[cmd].get("widget_progress_bar", None)
             else:
                 saved = saved_sensors.get(cmd, {})
                 is_show = saved.get("show", def_show)
                 is_log = saved.get("log", def_log)
                 limit_val = str(saved.get("limit", def_limit))
+                card, val_lbl, bar = None, None, None
 
             self.sensor_state[cmd] = {
                 "name": name, "unit": unit,
                 "show_var": ctk.BooleanVar(value=is_show),
                 "log_var": ctk.BooleanVar(value=is_log),
                 "limit_var": ctk.StringVar(value=limit_val),
-                "widget_value_label": None,
-                "widget_progress_bar": None 
+                "card_widget": card,
+                "widget_value_label": val_lbl,
+                "widget_progress_bar": bar
             }
 
-    # --- DASHBOARD TAB ---
+    # --- DASHBOARD TAB (OPTIMIZED CACHE) ---
     def _setup_dashboard_tab(self):
         self.frame_controls = ctk.CTkFrame(self.tab_dash, height=50)
         self.frame_controls.pack(fill="x", padx=10, pady=5)
@@ -150,29 +165,46 @@ class DashboardApp(ctk.CTk):
         self.dashboard_dirty = True
 
     def rebuild_dashboard_grid(self):
-        for widget in self.dash_scroll.winfo_children(): widget.destroy()
-        
+        """OPTIMIZED: Hides/Shows widgets instead of destroying them."""
+        # 1. Unmap all existing cards (don't destroy)
+        for cmd, state in self.sensor_state.items():
+            if state["card_widget"]:
+                state["card_widget"].grid_forget()
+
+        # 2. Map only the active ones
         active_sensors = [k for k, v in self.sensor_state.items() if v["show_var"].get()]
         cols = 3
         
         for i, cmd in enumerate(active_sensors):
             row = i // cols; col = i % cols
-            card = ctk.CTkFrame(self.dash_scroll)
-            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-            self.dash_scroll.grid_columnconfigure(col, weight=1)
+            state = self.sensor_state[cmd]
             
-            title = f"{self.sensor_state[cmd]['name']}"
-            if self.sensor_state[cmd]['unit']: title += f" ({self.sensor_state[cmd]['unit']})"
-            ctk.CTkLabel(card, text=title, font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10,0))
+            # Check Cache
+            card = state["card_widget"]
             
-            val_lbl = ctk.CTkLabel(card, text="--", font=("Arial", 32, "bold"), text_color="#3498db")
-            val_lbl.pack(pady=(0,5))
-            self.sensor_state[cmd]['widget_value_label'] = val_lbl
+            if card is None:
+                # Create if doesn't exist
+                card = ctk.CTkFrame(self.dash_scroll)
+                self.dash_scroll.grid_columnconfigure(col, weight=1)
+                
+                title = f"{state['name']}"
+                if state['unit']: title += f" ({state['unit']})"
+                ctk.CTkLabel(card, text=title, font=("Arial", 12, "bold"), text_color="gray").pack(pady=(10,0))
+                
+                val_lbl = ctk.CTkLabel(card, text="--", font=("Arial", 32, "bold"), text_color="#3498db")
+                val_lbl.pack(pady=(0,5))
+                
+                bar = ctk.CTkProgressBar(card, width=200, height=10, progress_color="#3498db")
+                bar.set(0)
+                bar.pack(pady=(0,15))
+                
+                # Store in Cache
+                state["card_widget"] = card
+                state["widget_value_label"] = val_lbl
+                state["widget_progress_bar"] = bar
 
-            bar = ctk.CTkProgressBar(card, width=200, height=10, progress_color="#3498db")
-            bar.set(0) 
-            bar.pack(pady=(0,15))
-            self.sensor_state[cmd]['widget_progress_bar'] = bar
+            # Place it
+            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
             
         self.dashboard_dirty = False 
 
@@ -206,11 +238,16 @@ class DashboardApp(ctk.CTk):
         self.ax2.set_xlim(0, len(self.history_speed))
         self.canvas.draw_idle()
 
-    # --- SETTINGS TAB ---
+    # --- SETTINGS TAB (OPTIMIZED & FILTERED) ---
     def _setup_settings_tab(self):
         frame_top = ctk.CTkFrame(self.tab_settings, fg_color="transparent")
         frame_top.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(frame_top, text="Sensor Config", font=("Arial", 18, "bold")).pack(side="left")
+        
+        self.filter_var = ctk.StringVar(value="Standard")
+        ctk.CTkLabel(frame_top, text="Show Pack:", font=("Arial", 12)).pack(side="left", padx=5)
+        self.combo_filter = ctk.CTkOptionMenu(frame_top, variable=self.filter_var, values=["Standard"], command=self.refresh_settings_list)
+        self.combo_filter.pack(side="left", padx=5)
+
         ctk.CTkButton(frame_top, text="Manage Pro Packs", fg_color="purple", width=150, command=self.open_pack_manager).pack(side="right")
 
         header_frame = ctk.CTkFrame(self.tab_settings, fg_color="#404040")
@@ -246,10 +283,29 @@ class DashboardApp(ctk.CTk):
         self.lbl_path.pack(side="left", padx=10)
         ctk.CTkButton(frame_log, text="Change Folder", command=self.change_log_folder).pack(side="right", padx=10)
 
-    def refresh_settings_list(self):
+    def update_filter_options(self):
+        packs = sorted(list(set(self.sensor_sources.values())))
+        if "Standard" in packs:
+            packs.remove("Standard")
+            packs.insert(0, "Standard")
+        packs.insert(0, "All (Slow)")
+        self.combo_filter.configure(values=packs)
+        if self.filter_var.get() not in packs:
+            self.filter_var.set("Standard")
+
+    def refresh_settings_list(self, choice=None):
         for widget in self.settings_scroll.winfo_children(): widget.destroy()
+        
+        target_pack = self.filter_var.get()
         row_idx = 0
+        
+        items_to_show = []
         for cmd, data in self.sensor_state.items():
+            src = self.sensor_sources.get(cmd, "Standard")
+            if target_pack == "All (Slow)" or src == target_pack:
+                items_to_show.append((cmd, data))
+        
+        for cmd, data in items_to_show:
             ctk.CTkLabel(self.settings_scroll, text=data["name"], anchor="w").grid(row=row_idx, column=0, sticky="w", padx=10, pady=2)
             ctk.CTkEntry(self.settings_scroll, textvariable=data["limit_var"], width=60).grid(row=row_idx, column=1, padx=5, pady=2)
             ctk.CTkCheckBox(self.settings_scroll, text="", variable=data["log_var"], width=20).grid(row=row_idx, column=2, padx=15, pady=2)
@@ -258,35 +314,34 @@ class DashboardApp(ctk.CTk):
             if row_idx % 20 == 0: self.update_idletasks()
 
     def toggle_all(self, type_str, state):
+        target_pack = self.filter_var.get()
         for cmd, data in self.sensor_state.items():
-            if type_str == "show": data["show_var"].set(state)
-            elif type_str == "log": data["log_var"].set(state)
+            src = self.sensor_sources.get(cmd, "Standard")
+            if target_pack == "All (Slow)" or src == target_pack:
+                if type_str == "show": data["show_var"].set(state)
+                elif type_str == "log": data["log_var"].set(state)
+        
         if type_str == "show": self.mark_dashboard_dirty()
 
-    # --- PACK MANAGER POPUP (RECURSIVE FIX) ---
+    # --- PACK MANAGER POPUP (AUTO-CLOSE FIX) ---
     def open_pack_manager(self):
         window = ctk.CTkToplevel(self)
         window.title("Manage Pro Packs")
         window.geometry("400x350")
         window.attributes("-topmost", True)
-        
         ctk.CTkLabel(window, text="Enable/Disable Car Models", font=("Arial", 16, "bold")).pack(pady=10)
-        
         scroll = ctk.CTkScrollableFrame(window)
         scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        
         footer = ctk.CTkFrame(window, height=50)
         footer.pack(fill="x", side="bottom")
 
         enabled_packs = self.config.get("enabled_packs", [])
         
-        # FIND ALL FILES RECURSIVELY
         available_files = []
         if os.path.exists(PRO_PACK_DIR):
             for root, dirs, files in os.walk(PRO_PACK_DIR):
                 for f in files:
                     if f.endswith(".json"):
-                        # Store relative path: "Toyota/Prius.json"
                         full = os.path.join(root, f)
                         rel = os.path.relpath(full, PRO_PACK_DIR)
                         available_files.append(rel)
@@ -301,17 +356,22 @@ class DashboardApp(ctk.CTk):
             self.config["enabled_packs"] = new_enabled
             ConfigManager.save_config(self.config)
             
-            window.configure(cursor="watch")
+            # 1. Close Popup Immediately
+            window.destroy()
+            
+            # 2. Show Loading on Main App
             self.configure(cursor="watch")
             self.update()
             
+            # 3. Heavy Lifting
             self.reload_sensor_definitions()
+            self.update_filter_options() 
             self.refresh_settings_list()
             self.mark_dashboard_dirty()
             
+            # 4. Done
             self.configure(cursor="")
-            messagebox.showinfo("Success", "Packs updated! Sensor list refreshed.")
-            window.destroy()
+            self.append_debug_log("Packs Reloaded Successfully.")
 
         for f in available_files:
             row = ctk.CTkFrame(scroll)
@@ -364,13 +424,17 @@ class DashboardApp(ctk.CTk):
             current_speed = 0
 
             for cmd, state in self.sensor_state.items():
-                if state["show_var"].get() or state["log_var"].get() or cmd in ["SPEED", "RPM", "CONTROL_MODULE_VOLTAGE"]:
+                # Optimized Query: Only query if visible OR logging OR critical
+                is_visible = state["show_var"].get()
+                is_logging = state["log_var"].get()
+                
+                if is_visible or is_logging or cmd in ["SPEED", "RPM", "CONTROL_MODULE_VOLTAGE"]:
                     val = self.obd.query_sensor(cmd)
                     if val is not None:
                         data_snapshot[cmd] = val
                         if cmd == "SPEED": current_speed = val
                         
-                        if state["show_var"].get():
+                        if is_visible:
                             if state["widget_value_label"]:
                                 state["widget_value_label"].configure(text=str(val))
                             

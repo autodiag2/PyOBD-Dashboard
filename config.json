@@ -1,6 +1,8 @@
 {
     "log_dir": "C:\\Users\\papaltm\\Documents\\PyOBD-Dashboard\\logs",
-    "enabled_packs": [],
+    "enabled_packs": [
+        "Volkswagen\\VW_Sharan_2.0_TDI_DPF.json"
+    ],
     "sensors": {
         "RPM": {
             "show": true,
@@ -61,6 +63,41 @@
             "show": true,
             "log": false,
             "limit": "3600"
+        },
+        "VAG_DPF_SOOT_MASS_CALC": {
+            "show": true,
+            "log": false,
+            "limit": "24"
+        },
+        "VAG_DPF_SOOT_MASS_MEAS": {
+            "show": true,
+            "log": false,
+            "limit": "24"
+        },
+        "VAG_DPF_OIL_ASH_RESIDUE": {
+            "show": true,
+            "log": false,
+            "limit": "80"
+        },
+        "VAG_DIST_SINCE_REGEN": {
+            "show": true,
+            "log": false,
+            "limit": "1000"
+        },
+        "VAG_TIME_SINCE_REGEN": {
+            "show": true,
+            "log": false,
+            "limit": "1000"
+        },
+        "VAG_EXHAUST_TEMP_SENSOR_1": {
+            "show": true,
+            "log": false,
+            "limit": "900"
+        },
+        "VAG_OIL_TEMP": {
+            "show": true,
+            "log": false,
+            "limit": "150"
         }
     }
 }
