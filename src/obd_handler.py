@@ -10,6 +10,10 @@ class OBDHandler:
         self.status = "Disconnected"
         self.log_callback = log_callback
 
+        # SAFETY: Minimum time between commands (seconds)
+        # 0.05s = 50ms. Prevents flooding the CAN bus.
+        self.inter_command_delay = 0.05
+
     def log(self, message):
         if self.log_callback:
             self.log_callback(message)
@@ -26,7 +30,8 @@ class OBDHandler:
             return True
 
         try:
-            self.connection = obd.OBD()
+            # fast=False ensures we initialize protocol slowly/safely
+            self.connection = obd.OBD(fast=False)
             if self.connection.is_connected():
                 self.status = "Connected"
                 self.log(f"SUCCESS: Connected to {self.connection.port_name}")
@@ -54,9 +59,16 @@ class OBDHandler:
 
         if hasattr(obd.commands, command_name):
             cmd = getattr(obd.commands, command_name)
-            response = self.connection.query(cmd)
-            if response.is_null(): return None
-            return response.value.magnitude
+
+            # SAFETY: Prevent spamming
+            time.sleep(self.inter_command_delay)
+
+            try:
+                response = self.connection.query(cmd)
+                if response.is_null(): return None
+                return response.value.magnitude
+            except:
+                return None
         return None
 
     def get_dtc(self):
@@ -64,33 +76,26 @@ class OBDHandler:
         self.log("Querying DTCs...")
         if self.simulation: return [("P0300", "Random/Multiple Cylinder Misfire")]
 
+        # SAFETY: DTC reading is heavy, sleep before
+        time.sleep(0.2)
         res = self.connection.query(obd.commands.GET_DTC)
         return res.value if not res.is_null() else []
 
     def get_freeze_frame_snapshot(self, sensor_list):
-        """
-        Queries the car for the state of sensors at the moment the error happened.
-        Uses Mode 02 (Freeze Frame).
-        """
         self.log("Reading Freeze Frame Data...")
         snapshot = {}
-
         if self.simulation:
-            # Fake snapshot
             time.sleep(1)
-            return {"RPM": 4520, "SPEED": 110, "COOLANT_TEMP": 105, "DTC_CAUSING_FREEZE": "P0300"}
+            return {"RPM": 4520, "SPEED": 110, "DTC": "P0300"}
 
         if self.connection and self.connection.is_connected():
-            # 1. Get the DTC that caused the freeze
-            # 2. Loop through sensors and ask for Mode 2 data
             for name in sensor_list:
                 if hasattr(obd.commands, name):
                     cmd = getattr(obd.commands, name)
-                    # Query in Mode 2 (Freeze Frame)
+                    time.sleep(self.inter_command_delay)  # SAFETY DELAY
                     response = self.connection.query(cmd, mode=2)
                     if not response.is_null():
                         snapshot[name] = response.value.magnitude
-
         return snapshot
 
     def clear_dtc(self):
@@ -112,13 +117,24 @@ class OBDHandler:
 
     def _simulate_data(self, name):
         ranges = {
-            'RPM': (800, 5000), 'SPEED': (0, 130),
-            'COOLANT_TEMP': (80, 110), 'CONTROL_MODULE_VOLTAGE': (12.5, 14.5),
-            'ENGINE_LOAD': (15, 80), 'THROTTLE_POS': (0, 100),
-            'INTAKE_TEMP': (20, 50), 'MAF': (2, 50),
-            'FUEL_LEVEL': (0, 100), 'BAROMETRIC_PRESSURE': (95, 105),
-            'TIMING_ADVANCE': (-10, 40), 'RUN_TIME': (0, 9999)
+            'RPM': (800, 5000),
+            'SPEED': (0, 130),
+            'COOLANT_TEMP': (80, 110),
+            'CONTROL_MODULE_VOLTAGE': (12.8, 14.5),
+            'ENGINE_LOAD': (15, 80),
+            'THROTTLE_POS': (0, 100),
+            'INTAKE_TEMP': (20, 50),
+            'MAF': (2, 50),
+            'FUEL_LEVEL': (0, 100),
+            'BAROMETRIC_PRESSURE': (95, 105),
+            'TIMING_ADVANCE': (-10, 40),
+            'RUN_TIME': (0, 9999)
         }
+
+        if name == 'SPEED':
+            # 10% chance to be 0 (stopped), otherwise driving
+            return 0 if random.random() < 0.1 else random.randint(0, 120)
+
         if name in ranges:
             val = random.uniform(*ranges[name])
             return int(val) if val > 10 else round(val, 2)

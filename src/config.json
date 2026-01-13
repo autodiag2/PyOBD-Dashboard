@@ -2,52 +2,64 @@
     "log_dir": "C:/Users/User/Downloads",
     "sensors": {
         "RPM": {
-            "show": true,
-            "log": false
+            "show": false,
+            "log": false,
+            "limit": "6000"
         },
         "SPEED": {
-            "show": true,
-            "log": false
+            "show": false,
+            "log": false,
+            "limit": "120"
         },
         "COOLANT_TEMP": {
             "show": true,
-            "log": false
+            "log": false,
+            "limit": "110"
         },
         "CONTROL_MODULE_VOLTAGE": {
             "show": true,
-            "log": false
+            "log": false,
+            "limit": "15"
         },
         "ENGINE_LOAD": {
             "show": true,
-            "log": false
+            "log": false,
+            "limit": "90"
         },
         "THROTTLE_POS": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "100"
         },
         "INTAKE_TEMP": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "60"
         },
         "MAF": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "100"
         },
         "FUEL_LEVEL": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "0"
         },
         "BAROMETRIC_PRESSURE": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "0"
         },
         "TIMING_ADVANCE": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "0"
         },
         "RUN_TIME": {
-            "show": false,
-            "log": false
+            "show": true,
+            "log": false,
+            "limit": "0"
         }
     }
 }

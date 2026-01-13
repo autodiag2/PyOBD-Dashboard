@@ -23,7 +23,7 @@ A modern, open-source OBD-II diagnostic tool and dashboard built with Python. De
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/YOUR_USERNAME/PyOBD-Dashboard.git
+    git clone https://github.com/Paul-HenryP/PyOBD-Dashboard.git
     cd PyOBD-Dashboard
     ```
 
