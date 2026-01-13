@@ -1,0 +1,53 @@
+{
+    "log_dir": "C:/Users/User/Downloads",
+    "sensors": {
+        "RPM": {
+            "show": true,
+            "log": false
+        },
+        "SPEED": {
+            "show": true,
+            "log": false
+        },
+        "COOLANT_TEMP": {
+            "show": true,
+            "log": false
+        },
+        "CONTROL_MODULE_VOLTAGE": {
+            "show": true,
+            "log": false
+        },
+        "ENGINE_LOAD": {
+            "show": true,
+            "log": false
+        },
+        "THROTTLE_POS": {
+            "show": false,
+            "log": false
+        },
+        "INTAKE_TEMP": {
+            "show": false,
+            "log": false
+        },
+        "MAF": {
+            "show": false,
+            "log": false
+        },
+        "FUEL_LEVEL": {
+            "show": false,
+            "log": false
+        },
+        "BAROMETRIC_PRESSURE": {
+            "show": false,
+            "log": false
+        },
+        "TIMING_ADVANCE": {
+            "show": false,
+            "log": false
+        },
+        "RUN_TIME": {
+            "show": false,
+            "log": false
+        }
+    }
+}
