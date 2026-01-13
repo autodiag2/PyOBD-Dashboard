@@ -1,5 +1,6 @@
 {
     "log_dir": "C:\\Users\\papaltm\\Documents\\PyOBD-Dashboard\\logs",
+    "enabled_packs": [],
     "sensors": {
         "RPM": {
             "show": true,

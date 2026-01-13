@@ -4,3 +4,8 @@ venv/
 .vscode/
 *.log
 *.logs
+pro_definitions.json
+*.json
+!config.json
+pro_packs/
+*.pro.json
