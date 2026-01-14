@@ -7,5 +7,11 @@ venv/
 pro_definitions.json
 *.json
 !config.json
-pro_packs/
 *.pro.json
+
+build/
+dist/
+*.spec
+
+pro_packs/*.json
+!pro_packs/.gitkeep

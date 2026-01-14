@@ -1,5 +1,6 @@
 {
     "log_dir": "C:/Users/User/Downloads",
+    "enabled_packs": [],
     "sensors": {
         "RPM": {
             "show": false,

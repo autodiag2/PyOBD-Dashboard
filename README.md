@@ -49,3 +49,7 @@ This software is provided "as is". Clearing fault codes does not fix the underly
 ##  License
 
 Open Source. Feel free to fork and improve!
+
+### Other info
+Used icon:
+<a href="https://www.flaticon.com/free-icons/motor" title="motor icons">Motor icons created by Freepik - Flaticon</a>

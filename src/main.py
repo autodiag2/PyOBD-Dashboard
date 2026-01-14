@@ -1,7 +1,7 @@
 from obd_handler import OBDHandler
 from gui import DashboardApp
 
-SIMULATION_MODE = True
+SIMULATION_MODE = False
 
 if __name__ == "__main__":
     handler = OBDHandler(simulation=SIMULATION_MODE)
