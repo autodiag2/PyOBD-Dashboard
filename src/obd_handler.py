@@ -1,8 +1,6 @@
 import obd
-from obd.utils import bytes_to_int
 import random
 import time
-import re
 
 
 class OBDHandler:
@@ -14,6 +12,9 @@ class OBDHandler:
         self.inter_command_delay = 0.05
 
         self.pro_defs = {}
+
+        self.sim_start_time = time.time()
+        self.sim_speed = 0
 
     def log(self, message):
         if self.log_callback:
@@ -30,6 +31,7 @@ class OBDHandler:
         if self.simulation:
             self.log("Attempting connection (SIMULATION)...")
             self.status = "Connected (SIMULATION)"
+            self.sim_start_time = time.time()  # Reset timer
             self.log("SUCCESS: Simulation Mode Active")
             return True
 
@@ -118,12 +120,18 @@ class OBDHandler:
             variables[chr(char_code)] = byte_val
 
         try:
-            allowed_names = {"min": min, "max": max, "abs": abs}
+            allowed_names = {"min": min, "max": max, "abs": abs, "signed": self._signed}
             allowed_names.update(variables)
             result = eval(formula, {"__builtins__": {}}, allowed_names)
             return float(result)
         except:
             return None
+
+    def _signed(self, val):
+        """Helper for formulas: Convert unsigned byte to signed integer"""
+        if val > 127:
+            return val - 256
+        return val
 
     def get_dtc(self):
         if not self.is_connected(): return []
@@ -166,22 +174,53 @@ class OBDHandler:
         return False
 
     def _simulate_data(self, name):
-        ranges = {
-            'RPM': (800, 5000), 'SPEED': (0, 130),
-            'COOLANT_TEMP': (80, 110), 'CONTROL_MODULE_VOLTAGE': (12.8, 14.5),
-            'ENGINE_LOAD': (15, 80), 'THROTTLE_POS': (0, 100),
-            'INTAKE_TEMP': (20, 50), 'MAF': (2, 50),
-            'FUEL_LEVEL': (0, 100), 'BAROMETRIC_PRESSURE': (95, 105),
-            'TIMING_ADVANCE': (-10, 40), 'RUN_TIME': (0, 9999)
-        }
+        """Generates realistic-looking data for testing"""
 
-        if name not in ranges:
-            return random.randint(0, 100)
+        # --- 1. PRIORITY LOGIC ---
+        if name == 'RUN_TIME':
+            return int(time.time() - self.sim_start_time)
 
+        if name == 'BAROMETRIC_PRESSURE':
+            return 101 + random.uniform(-0.5, 0.5)  # ~101 kPa (Sea level)
+
+        if name == 'FUEL_LEVEL':
+            return 75.0  # Steady 75%
+
+        if name == 'TIMING_ADVANCE':
+            return random.randint(10, 25)  # Degrees
+
+        # --- 2. PHYSICS SIMULATION ---
         if name == 'SPEED':
-            return 0 if random.random() < 0.1 else random.randint(0, 120)
+            # Accelerate and Decelerate smoothly
+            change = random.randint(-5, 5)
+            self.sim_speed += change
+            if self.sim_speed < 0: self.sim_speed = 0
+            if self.sim_speed > 160: self.sim_speed = 160
+            return self.sim_speed
+
+        if name == 'RPM':
+            if self.sim_speed == 0:
+                return 800 + random.randint(-20, 20)  # Idle
+            else:
+                return (self.sim_speed * 30) + random.randint(0, 200)
+
+        # --- 3. GENERIC RANGES ---
+        ranges = {
+            'COOLANT_TEMP': (80, 105),
+            'CONTROL_MODULE_VOLTAGE': (13.8, 14.4),
+            'ENGINE_LOAD': (15, 80),
+            'THROTTLE_POS': (0, 100),
+            'INTAKE_TEMP': (20, 50),
+            'MAF': (2, 50)
+        }
 
         if name in ranges:
             val = random.uniform(*ranges[name])
+
+            if name == 'CONTROL_MODULE_VOLTAGE':
+                return round(val, 2)
+
             return int(val) if val > 10 else round(val, 2)
-        return 0
+
+        # Fallback for unknown/Pro sensors
+        return random.randint(0, 100)

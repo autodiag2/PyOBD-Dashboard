@@ -3,6 +3,7 @@ import os
 import json
 from config_manager import ConfigManager
 from constants import PRO_PACK_DIR
+from ui.theme import ThemeManager  # Added import for dynamic themes
 
 
 class SettingsTab:
@@ -10,6 +11,7 @@ class SettingsTab:
         self.frame = parent_frame
         self.app = app_instance
 
+        # 1. Header Area
         frame_top = ctk.CTkFrame(self.frame, fg_color="transparent")
         frame_top.pack(fill="x", padx=20, pady=10)
 
@@ -22,6 +24,20 @@ class SettingsTab:
         ctk.CTkButton(frame_top, text="Manage Pro Packs", fg_color="purple", width=150,
                       command=self.open_pack_manager).pack(side="right")
 
+        ctk.CTkLabel(frame_top, text="Theme:", font=("Arial", 12)).pack(side="right", padx=5)
+        self.var_theme = ctk.StringVar(value=self.app.config.get("theme", "Cyber"))
+
+        theme_names = sorted(list(ThemeManager.THEMES.keys()))
+
+        self.combo_theme = ctk.CTkOptionMenu(
+            frame_top,
+            variable=self.var_theme,
+            values=theme_names,
+            command=self.app.change_theme,
+            width=130
+        )
+        self.combo_theme.pack(side="right", padx=5)
+
         header_frame = ctk.CTkFrame(self.frame, fg_color="#404040")
         header_frame.pack(fill="x", padx=20)
 
@@ -33,6 +49,7 @@ class SettingsTab:
                       command=lambda: self.toggle_all("show", False)).pack()
         ctk.CTkLabel(header_frame, text="Show", width=30).pack(side="right")
 
+        # Log All/None
         frame_all_log = ctk.CTkFrame(header_frame, fg_color="transparent")
         frame_all_log.pack(side="right", padx=5)
         ctk.CTkButton(frame_all_log, text="All", width=30, height=15, font=("Arial", 8),
@@ -44,8 +61,10 @@ class SettingsTab:
         ctk.CTkLabel(header_frame, text="Limit", width=80).pack(side="right", padx=5)
         ctk.CTkLabel(header_frame, text="Sensor Name", width=200, anchor="w").pack(side="left", padx=10)
 
+        # 3. Scrollable List
         self.settings_scroll = ctk.CTkScrollableFrame(self.frame)
         self.settings_scroll.pack(fill="both", expand=True, padx=20, pady=5)
+        # Configure Grid Weights
         self.settings_scroll.grid_columnconfigure(0, weight=1)
         self.settings_scroll.grid_columnconfigure(1, minsize=80)
         self.settings_scroll.grid_columnconfigure(2, minsize=60)
@@ -53,6 +72,7 @@ class SettingsTab:
 
         self.refresh_settings_list()
 
+        # 4. Footer
         frame_log = ctk.CTkFrame(self.frame)
         frame_log.pack(fill="x", padx=20, pady=20)
         self.app.lbl_path = ctk.CTkLabel(frame_log, text=f"Save Path: {self.app.logger.log_dir}")
@@ -115,6 +135,7 @@ class SettingsTab:
 
         enabled_packs = self.app.config.get("enabled_packs", [])
 
+        # Recursive Search
         available_files = []
         if os.path.exists(PRO_PACK_DIR):
             for root, dirs, files in os.walk(PRO_PACK_DIR):
@@ -147,6 +168,7 @@ class SettingsTab:
             row = ctk.CTkFrame(scroll)
             row.pack(fill="x", pady=2)
 
+            # Normalize Paths
             is_checked = False
             norm_f = os.path.normpath(f)
             for enabled in enabled_packs:

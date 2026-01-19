@@ -10,6 +10,7 @@ from data_logger import DataLogger
 from config_manager import ConfigManager
 from diagnostic_engine import DiagnosticEngine
 from constants import STANDARD_SENSORS, PRO_PACK_DIR
+from ui.theme import ThemeManager
 
 from ui.tabs.dashboard_tab import DashboardTab
 from ui.tabs.graph_tab import GraphTab
@@ -37,9 +38,16 @@ class DashboardApp(ctk.CTk):
 
         self.title("PyOBD Professional - Ultimate Edition")
         self.geometry("1100x800")
+
+        # --- LOAD SAVED THEME ---
+        saved_theme = self.config.get("theme", "Cyber")
+        ThemeManager.set_theme(saved_theme)
+
         ctk.set_appearance_mode("dark")
+        self.configure(fg_color=ThemeManager.get("BACKGROUND"))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        # Tabs
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -71,6 +79,44 @@ class DashboardApp(ctk.CTk):
 
         self.ui_dashboard.rebuild_grid()
         self.update_loop()
+
+    def change_theme(self, new_theme):
+        ThemeManager.set_theme(new_theme)
+
+        self.configure(fg_color=ThemeManager.get("BACKGROUND"))
+
+        if hasattr(self, 'ui_dashboard'):
+            self.ui_dashboard.dash_scroll.configure(fg_color=ThemeManager.get("BACKGROUND"))
+            self.ui_dashboard.frame_controls.configure(fg_color=ThemeManager.get("BACKGROUND"))
+
+
+            self.ui_dashboard.app.btn_connect.configure(
+                fg_color=ThemeManager.get("ACCENT"),
+                text_color=ThemeManager.get("BACKGROUND"),
+                hover_color=ThemeManager.get("ACCENT_DIM")
+            )
+
+            self.ui_dashboard.combo_ports.configure(
+                fg_color=ThemeManager.get("CARD_BG"),
+                text_color=ThemeManager.get("ACCENT"),
+                button_color=ThemeManager.get("ACCENT_DIM")
+            )
+
+        for cmd, state in self.sensor_state.items():
+            if state["card_widget"]:
+                state["card_widget"].configure(fg_color=ThemeManager.get("CARD_BG"))
+
+            gauge = state.get("widget_progress_bar")
+            if gauge and hasattr(gauge, 'redraw_colors'):
+                gauge.redraw_colors()
+
+            title_lbl = state.get("widget_title_label")
+            if title_lbl:
+                title_lbl.configure(text_color=ThemeManager.get("TEXT_MAIN"))
+
+        # 5. Save to Config
+        self.config["theme"] = new_theme
+        ConfigManager.save_config(self.config)
 
     def reload_sensor_definitions(self):
         self.available_sensors = STANDARD_SENSORS.copy()
@@ -142,7 +188,8 @@ class DashboardApp(ctk.CTk):
                 "limit_var": ctk.StringVar(value=limit_val),
                 "card_widget": card,
                 "widget_value_label": val_lbl,
-                "widget_progress_bar": bar
+                "widget_progress_bar": bar,
+                "widget_title_label": None  # Placeholder
             }
 
     def refresh_dev_mode_visibility(self):
@@ -198,13 +245,13 @@ class DashboardApp(ctk.CTk):
         if self.obd.is_connected():
             self.obd.disconnect()
             if hasattr(self.ui_dashboard.app, 'btn_connect'):
-                self.ui_dashboard.app.btn_connect.configure(text="CONNECT", fg_color="green", state="normal")
+                self.ui_dashboard.app.btn_connect.configure(text="CONNECT", fg_color=ThemeManager.get("ACCENT"),
+                                                            state="normal")
 
             for cmd in self.sensor_state:
-                lbl = self.sensor_state[cmd]['widget_value_label']
-                if lbl: lbl.configure(text="--")
                 bar = self.sensor_state[cmd]['widget_progress_bar']
-                if bar: bar.set(0)
+                if bar and hasattr(bar, 'update_value'):
+                    bar.update_value(0)
         else:
             selected_port = self.var_port.get()
             if selected_port == "Demo Mode":
@@ -291,9 +338,7 @@ class DashboardApp(ctk.CTk):
                 self.ui_diagnostics.app.txt_dtc.insert("end", f"• {c[0]}: {c[1]}\n")
 
     def perform_full_backup(self):
-        if not self.obd.is_connected():
-            messagebox.showerror("Error", "Connect to car first!")
-            return
+        if not self.obd.is_connected(): messagebox.showerror("Error", "Connect to car first!"); return
         if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
             self.ui_diagnostics.app.txt_dtc.delete("1.0", "end")
             self.ui_diagnostics.app.txt_dtc.insert("end", "Reading System Data...\n")
@@ -316,9 +361,7 @@ class DashboardApp(ctk.CTk):
                 self.ui_diagnostics.app.txt_dtc.insert("end", f"Error saving backup: {e}")
 
     def confirm_clear_codes(self):
-        if not self.obd.is_connected():
-            messagebox.showerror("Error", "Connect to car first!")
-            return
+        if not self.obd.is_connected(): messagebox.showerror("Error", "Connect to car first!"); return
         answer = messagebox.askyesno("WARNING",
                                      "Have you performed a FULL BACKUP yet?\n\nClearing codes will PERMANENTLY erase Freeze Frame data.\nProceed?")
         if answer:
@@ -341,6 +384,7 @@ class DashboardApp(ctk.CTk):
             "log_dir": self.logger.log_dir,
             "enabled_packs": self.config.get("enabled_packs", []),
             "developer_mode": self.var_dev_mode.get(),
+            "theme": self.config.get("theme", "Cyber"),
             "sensors": {}
         }
         for cmd, state in self.sensor_state.items():
@@ -375,6 +419,7 @@ class DashboardApp(ctk.CTk):
 
             for cmd in needed_sensors:
                 val = self.obd.query_sensor(cmd)
+
                 if val is not None:
                     data_snapshot[cmd] = val
                     self.sensor_history[cmd].append(val)
@@ -382,22 +427,9 @@ class DashboardApp(ctk.CTk):
 
                     state = self.sensor_state.get(cmd)
                     if state and state["show_var"].get():
-                        if state["widget_value_label"]:
-                            state["widget_value_label"].configure(text=str(val))
-                        try:
-                            limit = float(state["limit_var"].get())
-                            color = "#3498db"
-                            if cmd == "CONTROL_MODULE_VOLTAGE" and (val < 11.5 or val > 15.5):
-                                color = "red"
-                            elif limit > 0 and val > limit:
-                                color = "red"
-                            if state["widget_value_label"]: state["widget_value_label"].configure(text_color=color)
-                            if state["widget_progress_bar"] and limit > 0:
-                                progress = min(val / limit, 1.0)
-                                state["widget_progress_bar"].set(progress)
-                                state["widget_progress_bar"].configure(progress_color=color)
-                        except ValueError:
-                            pass
+                        gauge = state.get("widget_progress_bar")
+                        if gauge and hasattr(gauge, 'update_value'):
+                            gauge.update_value(val)
 
             if self.tabview.get() == "Live Graph":
                 self.ui_graph.update()
@@ -411,4 +443,4 @@ class DashboardApp(ctk.CTk):
             self.logger.write_row(data_snapshot)
 
         if self.running:
-            self.after(500, self.update_loop)
+            self.after(100, self.update_loop)
