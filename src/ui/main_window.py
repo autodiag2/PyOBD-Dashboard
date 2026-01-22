@@ -6,6 +6,7 @@ import sys
 from collections import deque, defaultdict
 import serial.tools.list_ports
 import matplotlib.pyplot as plt
+from cryptography.fernet import Fernet
 
 from data_logger import DataLogger
 from config_manager import ConfigManager
@@ -17,15 +18,15 @@ from ui.tabs.dashboard_tab import DashboardTab
 from ui.tabs.graph_tab import GraphTab
 from ui.tabs.settings_tab import SettingsTab
 from ui.tabs.diagnostics_tab import DiagnosticsTab, DebugTab
-from cryptography.fernet import Fernet
+from ui.tabs.dyno_tab import DynoTab
 
-# --- INTERNAL UI CONFIGURATION ---
 _UI_RENDER_OPTS_A = [53, 51, 67, 90, 49, 118, 107, 51, 73, 100, 100, 85, 54, 108, 73, 120, 100, 82, 73, 97, 65, 67]
 _UI_RENDER_OPTS_B = [75, 75, 101, 100, 112, 52, 99, 89, 111, 49, 117, 104, 107, 116, 75, 76, 51, 115, 103, 115, 81, 61]
 
-def _get_render_context():
 
+def _get_render_context():
     return bytes(_UI_RENDER_OPTS_A + _UI_RENDER_OPTS_B)
+
 
 class DashboardApp(ctk.CTk):
     def __init__(self, obd_handler):
@@ -48,7 +49,6 @@ class DashboardApp(ctk.CTk):
         self.title("PyOBD Professional - Ultimate Edition")
         self.geometry("1100x800")
 
-        # --- LOAD SAVED THEME ---
         saved_theme = self.config.get("theme", "Cyber")
         ThemeManager.set_theme(saved_theme)
 
@@ -56,12 +56,12 @@ class DashboardApp(ctk.CTk):
         self.configure(fg_color=ThemeManager.get("BACKGROUND"))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        # Tabs
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
         self.tab_dash = self.tabview.add("Dashboard")
         self.tab_graph = self.tabview.add("Live Graph")
+        self.tab_dyno = self.tabview.add("Dyno")
         self.tab_diag = self.tabview.add("Diagnostics")
         self.tab_settings = self.tabview.add("Settings")
 
@@ -74,6 +74,7 @@ class DashboardApp(ctk.CTk):
 
         self.ui_dashboard = DashboardTab(self.tab_dash, self)
         self.ui_graph = GraphTab(self.tab_graph, self)
+        self.ui_dyno = DynoTab(self.tab_dyno, self)
         self.ui_diagnostics = DiagnosticsTab(self.tab_diag, self)
         self.ui_settings = SettingsTab(self.tab_settings, self)
 
@@ -142,21 +143,17 @@ class DashboardApp(ctk.CTk):
                     if f.endswith(".json") or f.endswith(".obd"):
                         full = os.path.join(root, f)
                         rel = os.path.relpath(full, PRO_PACK_DIR)
-
                         match = False
                         for p in enabled_packs:
                             if os.path.normpath(p) == os.path.normpath(rel):
                                 match = True
                                 break
-
                         if match:
                             try:
                                 pro_data = {}
-
                                 if f.endswith(".json"):
                                     with open(full, 'r', encoding='utf-8') as json_file:
                                         pro_data = json.load(json_file)
-
                                 elif f.endswith(".obd"):
                                     with open(full, 'rb') as enc_file:
                                         encrypted_data = enc_file.read()
@@ -167,7 +164,6 @@ class DashboardApp(ctk.CTk):
                                     self.available_sensors[key] = tuple(val[:5])
                                     self.sensor_sources[key] = rel
                                 print(f"Loaded Pack: {rel}")
-
                             except Exception as e:
                                 print(f"Error loading {rel}: {e}")
 
@@ -262,50 +258,48 @@ class DashboardApp(ctk.CTk):
             self.ui_graph.app.menu_left.configure(values=options)
             self.ui_graph.app.menu_right.configure(values=options)
 
-    # --- CONNECT BUTTON LOGIC (THREAD SAFE) ---
     def on_connect_click(self):
-        port_selection = self.var_port.get()
-        is_demo = (port_selection == "Demo Mode")
-        target_port = None if port_selection == "Auto" else port_selection
-        if is_demo: target_port = None
-
         if hasattr(self.ui_dashboard.app, 'btn_connect'):
-            self.ui_dashboard.app.btn_connect.configure(state="disabled", text="Working...")
+            self.ui_dashboard.app.btn_connect.configure(state="disabled", text="Connecting...")
+        threading.Thread(target=self.toggle_connection, daemon=True).start()
 
-        threading.Thread(target=self.bg_connection_task, args=(is_demo, target_port), daemon=True).start()
-
-    def bg_connection_task(self, is_demo, target_port):
-        """Runs in background thread"""
-        connected = False
-
+    def toggle_connection(self):
         if self.obd.is_connected():
             self.obd.disconnect()
-            connected = False
-        else:
-            self.obd.simulation = is_demo
-            connected = self.obd.connect(target_port)
-        self.after(0, lambda: self.post_connection_update(connected))
+            if hasattr(self.ui_dashboard.app, 'btn_connect'):
+                self.ui_dashboard.app.btn_connect.configure(text="CONNECT", fg_color=ThemeManager.get("ACCENT"),
+                                                            state="normal")
 
-    def post_connection_update(self, connected):
-        """Runs on Main Thread after connection attempt"""
-        if hasattr(self.ui_dashboard.app, 'btn_connect'):
-            self.ui_dashboard.app.btn_connect.configure(state="normal")
-
-            if connected:
-                self.ui_dashboard.app.btn_connect.configure(text="DISCONNECT", fg_color=ThemeManager.get("WARNING"))
-
-                # Start Logger
-                log_sensors = [k for k, v in self.sensor_state.items() if v["log_var"].get()]
-                self.logger.start_new_log(log_sensors)
-                self.append_debug_log(f"Connected. Logging {len(log_sensors)} sensors.")
-            else:
-                self.ui_dashboard.app.btn_connect.configure(text="CONNECT", fg_color=ThemeManager.get("ACCENT"))
-
-        if not connected:
-            for cmd, state in self.sensor_state.items():
-                bar = state.get('widget_progress_bar')
+            for cmd in self.sensor_state:
+                bar = self.sensor_state[cmd]['widget_progress_bar']
                 if bar and hasattr(bar, 'update_value'):
                     bar.update_value(0)
+        else:
+            selected_port = self.var_port.get()
+            if selected_port == "Demo Mode":
+                self.obd.simulation = True
+                target_port = None
+            else:
+                self.obd.simulation = False
+                target_port = None if selected_port == "Auto" else selected_port
+
+            success = self.obd.connect(target_port)
+
+            if hasattr(self.ui_dashboard.app, 'btn_connect'):
+                if success:
+                    self.ui_dashboard.app.btn_connect.configure(text="DISCONNECT", fg_color=ThemeManager.get("WARNING"),
+                                                                state="normal")
+                    log_sensors = [k for k, v in self.sensor_state.items() if v["log_var"].get()]
+                    self.logger.start_new_log(log_sensors)
+                    self.append_debug_log(f"Connected. Logging {len(log_sensors)} sensors.")
+                else:
+                    self.ui_dashboard.app.btn_connect.configure(text="RETRY CONNECT", fg_color="orange", state="normal")
+
+            if not success:
+                for cmd in self.sensor_state:
+                    bar = self.sensor_state[cmd].get('widget_progress_bar')
+                    if bar and hasattr(bar, 'update_value'):
+                        bar.update_value(0)
 
     def change_log_folder(self):
         new_dir = filedialog.askdirectory()
@@ -471,6 +465,10 @@ class DashboardApp(ctk.CTk):
 
             if self.tabview.get() == "Live Graph":
                 self.ui_graph.update()
+
+            if self.tabview.get() == "Dyno" and hasattr(self, 'ui_dyno') and self.ui_dyno.is_recording:
+                current_rpm = data_snapshot.get("RPM", 0)
+                self.ui_dyno.update_dyno(current_speed, current_rpm)
 
             if hasattr(self.ui_diagnostics.app, 'btn_clear'):
                 if current_speed > 0:
