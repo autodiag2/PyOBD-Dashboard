@@ -19,7 +19,9 @@ from ui.tabs.graph_tab import GraphTab
 from ui.tabs.settings_tab import SettingsTab
 from ui.tabs.diagnostics_tab import DiagnosticsTab, DebugTab
 from ui.tabs.dyno_tab import DynoTab
+from ui.tabs.help_tab import HelpTab  # <--- RESTORED IMPORT
 
+# --- INTERNAL UI CONFIGURATION ---
 _UI_RENDER_OPTS_A = [53, 51, 67, 90, 49, 118, 107, 51, 73, 100, 100, 85, 54, 108, 73, 120, 100, 82, 73, 97, 65, 67]
 _UI_RENDER_OPTS_B = [75, 75, 101, 100, 112, 52, 99, 89, 111, 49, 117, 104, 107, 116, 75, 76, 51, 115, 103, 115, 81, 61]
 
@@ -49,6 +51,7 @@ class DashboardApp(ctk.CTk):
         self.title("PyOBD Professional - Ultimate Edition")
         self.geometry("1100x800")
 
+        # --- LOAD SAVED THEME ---
         saved_theme = self.config.get("theme", "Cyber")
         ThemeManager.set_theme(saved_theme)
 
@@ -56,6 +59,7 @@ class DashboardApp(ctk.CTk):
         self.configure(fg_color=ThemeManager.get("BACKGROUND"))
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        # Tabs
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -64,6 +68,7 @@ class DashboardApp(ctk.CTk):
         self.tab_dyno = self.tabview.add("Dyno")
         self.tab_diag = self.tabview.add("Diagnostics")
         self.tab_settings = self.tabview.add("Settings")
+        self.tab_help = self.tabview.add("Help")  # <--- RESTORED TAB
 
         self.var_dev_mode = ctk.BooleanVar(value=self.config.get("developer_mode", False))
         self.var_port = ctk.StringVar(value="Auto")
@@ -72,11 +77,13 @@ class DashboardApp(ctk.CTk):
 
         self.reload_sensor_definitions()
 
+        # Initialize UI Classes
         self.ui_dashboard = DashboardTab(self.tab_dash, self)
         self.ui_graph = GraphTab(self.tab_graph, self)
         self.ui_dyno = DynoTab(self.tab_dyno, self)
         self.ui_diagnostics = DiagnosticsTab(self.tab_diag, self)
         self.ui_settings = SettingsTab(self.tab_settings, self)
+        self.ui_help = HelpTab(self.tab_help, self)  # <--- RESTORED UI
 
         self.refresh_dev_mode_visibility()
         self.ui_graph.update()
@@ -291,7 +298,7 @@ class DashboardApp(ctk.CTk):
                                                                 state="normal")
                     log_sensors = [k for k, v in self.sensor_state.items() if v["log_var"].get()]
                     self.logger.start_new_log(log_sensors)
-                    self.append_debug_log(f"Connected. Logging {len(log_sensors)} sensors.")
+                    self.append_debug_log(f"Started logging: {len(log_sensors)} sensors.")
                 else:
                     self.ui_dashboard.app.btn_connect.configure(text="RETRY CONNECT", fg_color="orange", state="normal")
 
