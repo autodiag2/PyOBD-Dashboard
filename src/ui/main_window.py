@@ -77,7 +77,8 @@ class DashboardApp(ctk.CTk):
         self.tab_help = self.tabview.add("Help")
 
         self.var_dev_mode = ctk.BooleanVar(value=self.config.get("developer_mode", False))
-        self.var_port = ctk.StringVar(value="Auto")
+        self.var_port = ctk.StringVar(value=self.config.get("port", "Auto"))
+        self.var_baud = ctk.StringVar(value=self.config.get("baud_rate", "38400"))
         self.var_graph_left = ctk.StringVar(value="RPM")
         self.var_graph_right = ctk.StringVar(value="SPEED")
 
@@ -507,7 +508,9 @@ class DashboardApp(ctk.CTk):
             "enabled_packs": self.config.get("enabled_packs", []),
             "developer_mode": self.var_dev_mode.get(),
             "theme": self.config.get("theme", "Cyber"),
-            "sensors": {}
+            "sensors": {},
+            "port": self.var_port.get(),
+            "baud_rate": self.var_baud.get(),
         }
         for cmd, state in self.sensor_state.items():
             data_to_save["sensors"][cmd] = {"show": state["show_var"].get(), "log": state["log_var"].get(),
