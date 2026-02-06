@@ -16,23 +16,37 @@ class DashboardTab:
         self.frame_controls = ctk.CTkFrame(self.frame, height=50, fg_color=ThemeManager.get("BACKGROUND"))
         self.frame_controls.pack(fill="x", padx=10, pady=5)
 
-        ctk.CTkLabel(self.frame_controls, text="Port:", font=("Arial", 12),
-                     text_color=ThemeManager.get("TEXT_MAIN")).pack(side="left", padx=(10, 5))
+        ctk.CTkLabel(
+            self.frame_controls,
+            text="Port:",
+            font=("Arial", 12),
+            text_color=ThemeManager.get("TEXT_MAIN")
+        ).pack(side="left", padx=(10, 5))
 
         self.app.var_port = ctk.StringVar(value="Auto")
-        self.combo_ports = ctk.CTkOptionMenu(
+
+        self.combo_ports = ctk.CTkComboBox(
             self.frame_controls,
             variable=self.app.var_port,
-            values=self.app.get_serial_ports(),
-            width=100,
+            values=self._get_ports_values(),
+            width=200,
             fg_color=ThemeManager.get("CARD_BG"),
             text_color=ThemeManager.get("ACCENT"),
-            button_color=ThemeManager.get("ACCENT_DIM")
+            border_color=ThemeManager.get("ACCENT_DIM"),
+            button_color=ThemeManager.get("ACCENT_DIM"),
+            dropdown_fg_color=ThemeManager.get("CARD_BG"),
+            dropdown_text_color=ThemeManager.get("TEXT_MAIN"),
+            dropdown_hover_color=ThemeManager.get("ACCENT_DIM")
         )
         self.combo_ports.pack(side="left", padx=5)
 
-        ctk.CTkButton(self.frame_controls, text="⟳", width=30, fg_color=ThemeManager.get("CARD_BG"),
-                      command=self.app.refresh_ports).pack(side="left", padx=2)
+        ctk.CTkButton(
+            self.frame_controls,
+            text="⟳",
+            width=30,
+            fg_color=ThemeManager.get("CARD_BG"),
+            command=self.refresh_ports_ui
+        ).pack(side="left", padx=2)
 
         self.app.btn_connect = ctk.CTkButton(
             self.frame_controls,
@@ -60,6 +74,35 @@ class DashboardTab:
         self.dash_scroll = ctk.CTkScrollableFrame(self.frame, fg_color=ThemeManager.get("BACKGROUND"))
         self.dash_scroll.pack(fill="both", expand=True, padx=0, pady=0)
 
+    def _get_ports_values(self):
+        ports = []
+        try:
+            ports = list(self.app.get_serial_ports() or [])
+        except:
+            ports = []
+        values = ["Auto"] + [p for p in ports if p and p != "Auto"]
+        seen = set()
+        out = []
+        for v in values:
+            if v not in seen:
+                seen.add(v)
+                out.append(v)
+        return out
+
+    def refresh_ports_ui(self):
+        typed = self.app.var_port.get()
+        values = self._get_ports_values()
+        self.combo_ports.configure(values=values)
+        if typed:
+            self.app.var_port.set(typed)
+        elif values:
+            self.app.var_port.set(values[0])
+        if hasattr(self.app, "refresh_ports") and callable(self.app.refresh_ports):
+            try:
+                self.app.refresh_ports()
+            except:
+                pass
+
     def rebuild_grid(self):
         for widget in self.dash_scroll.winfo_children():
             widget.destroy()
@@ -73,7 +116,8 @@ class DashboardTab:
 
         total_items = len(active_sensors)
         self.total_pages = math.ceil(total_items / self.items_per_page)
-        if self.total_pages < 1: self.total_pages = 1
+        if self.total_pages < 1:
+            self.total_pages = 1
 
         if self.current_page >= self.total_pages:
             self.current_page = max(0, self.total_pages - 1)
@@ -86,21 +130,21 @@ class DashboardTab:
 
         cols = 3
         for i, cmd in enumerate(page_sensors):
-            row = i // cols;
+            row = i // cols
             col = i % cols
             state = self.app.sensor_state[cmd]
 
             try:
-                limit = float(state['limit_var'].get())
+                limit = float(state["limit_var"].get())
             except:
                 limit = 100
 
             container = ctk.CTkFrame(self.dash_scroll, fg_color=ThemeManager.get("CARD_BG"))
 
-            display_name = state['name']
+            display_name = state["name"]
             if len(display_name) > 18:
                 display_name = display_name[:15] + "..."
-            if state['unit']:
+            if state["unit"]:
                 display_name += f" ({state['unit']})"
 
             lbl_title = ctk.CTkLabel(
@@ -117,14 +161,14 @@ class DashboardTab:
                 height=180,
                 min_val=0,
                 max_val=limit,
-                unit=state['unit']
+                unit=state["unit"]
             )
             gauge.pack(pady=5)
 
             state["card_widget"] = container
             state["widget_progress_bar"] = gauge
 
-            tooltip_text = state.get("description", state['name'])
+            tooltip_text = state.get("description", state["name"])
             ToolTip(container, text=tooltip_text, delay=1000)
 
             container.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
