@@ -1,55 +1,63 @@
 @echo off
+setlocal enabledelayedexpansion
+
+:: Force the script to run from the project folder
+cd /d "%~dp0"
+
 echo ==========================================
 echo      BUILDING PYOBD SUITE (2 APPS)
 echo ==========================================
 
+:: 1. Virtual Environment Check
 if exist ".venv\Scripts\activate.bat" (
-    echo Activating Virtual Environment...
+    echo [INFO] Activating Virtual Environment...
     call .venv\Scripts\activate.bat
-) else (
-    echo WARNING: .venv not found. Using global Python.
 )
 
-echo Checking dependencies...
-pip install pyinstaller customtkinter obd pyserial matplotlib cryptography
+:: 2. Dependencies
+echo [INFO] Checking dependencies...
+pip install pyinstaller customtkinter obd pyserial matplotlib cryptography pillow
 
-REM 3. Clean up old builds
+:: 3. Clean up
+echo [INFO] Cleaning workspace...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
-if exist *.spec del *.spec
 
+:: Get CustomTkinter path
 for /f "delims=" %%i in ('python -c "import customtkinter; print(customtkinter.__path__[0])"') do set CTK_PATH=%%i
 
 echo.
 echo ------------------------------------------
-echo 1. BUILDING DASHBOARD (Standard User)
+echo 1. BUILDING DASHBOARD (PyOBD_Pro)
 echo ------------------------------------------
 pyinstaller --noconsole --onefile ^
     --name="PyOBD_Pro" ^
     --icon="app_icon.ico" ^
     --add-data "%CTK_PATH%;customtkinter/" ^
+    --collect-all matplotlib ^
     --hidden-import "serial" ^
     --hidden-import "PIL._tkinter_finder" ^
     src/main.py
 
 echo.
 echo ------------------------------------------
-echo 2. BUILDING CAN HACKER (Dev Tool)
+echo 2. BUILDING CAN SNIFFER (PyCAN_Hacker)
 echo ------------------------------------------
-if exist "src/can_hacker.py" (
+:: Using the correct filename found in your src directory: sniffer_main.py
+if exist "src/sniffer_main.py" (
     pyinstaller --noconsole --onefile ^
         --name="PyCAN_Hacker" ^
         --icon="app_icon.ico" ^
         --add-data "%CTK_PATH%;customtkinter/" ^
         --hidden-import "serial" ^
-        src/can_hacker.py
+        src/sniffer_main.py
 ) else (
-    echo Skipped CAN Hacker (Source file not found)
+    echo [ERROR] Expected src/sniffer_main.py not found!
 )
 
 echo.
 echo ==========================================
-echo      ALL BUILDS COMPLETE!
+echo      ALL BUILDS COMPLETE
 echo ==========================================
-echo Check 'dist' folder for your .exe files
+echo Check the 'dist' folder for your files.
 pause
