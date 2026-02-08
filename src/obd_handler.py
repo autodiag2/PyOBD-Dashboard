@@ -1,4 +1,5 @@
 import obd
+from obd import OBDCommand
 from obd.utils import bytes_to_int
 import random
 import time
@@ -13,7 +14,6 @@ class OBDHandler:
         self.inter_command_delay = 0.01
 
         self.pro_defs = {}
-
         self.supported_commands = set()
 
         self.sim_start_time = time.time()
@@ -70,11 +70,9 @@ class OBDHandler:
             self.connection = None
         self.status = "Disconnected"
         self.supported_commands = set()
-
         self.log("Disconnected.")
 
     def check_supported(self, command_key):
-        """Returns True if the sensor is supported by this specific car"""
         if self.simulation: return True
         if not self.is_connected(): return False
 
@@ -86,6 +84,15 @@ class OBDHandler:
             return True
 
         return False
+
+    def _set_header(self, header_hex):
+        """Manually sends an AT SH command to the ELM327"""
+        if not header_hex: return
+        try:
+            cmd = OBDCommand("SET_HEADER", "AT SH " + header_hex, b"", lambda m: m)
+            self.connection.query(cmd, force=True)
+        except Exception:
+            pass
 
     def query_sensor(self, command_key):
         if not self.is_connected(): return None
@@ -103,7 +110,6 @@ class OBDHandler:
                 if response.is_null(): return None
 
                 val = response.value.magnitude
-
                 if isinstance(val, float):
                     return round(val, 2)
                 return val
@@ -127,12 +133,14 @@ class OBDHandler:
 
         try:
             if header_hex:
-                self.connection.query(obd.commands.AT.SH + header_hex)
+                self._set_header(header_hex)
 
             mode = pid_hex[:2]
             pid = pid_hex[2:]
 
-            raw_response = self.connection.query(obd.commands.mode(mode) + pid)
+            cmd = OBDCommand("CUSTOM_PID", mode + pid, b"", lambda m: m)
+
+            raw_response = self.connection.query(cmd, force=True)
 
             if raw_response.is_null(): return None
             if not raw_response.messages: return None
@@ -164,8 +172,7 @@ class OBDHandler:
 
     def get_dtc(self):
         """
-        Performs a Deep Scan and returns specific categories.
-        Returns a Dictionary: {'Category Name': [(Code, Description), ...]}
+        Performs a Deep Scan (Engine + Pending + TCU).
         """
         if not self.is_connected(): return {}
 
@@ -185,51 +192,56 @@ class OBDHandler:
             }
 
         try:
-            # --- 1. SCAN ENGINE (7E0) ---
-            self.log("Scanning Engine...")
-            self.connection.query(obd.commands.AT.SH + "7E0")
 
-            # Confirmed (Mode 03)
-            res_confirmed = self.connection.query(obd.commands.GET_DTC)
+            self.log("Scanning Engine...")
+            self._set_header("7E0")
+            time.sleep(0.2)
+
+            res_confirmed = self.connection.query(obd.commands.GET_DTC, force=True)
             if not res_confirmed.is_null() and res_confirmed.value:
                 for code in res_confirmed.value:
                     dtc_groups["ENGINE - CONFIRMED (Permanent)"].append(code)
 
-            # Pending (Mode 07)
-            res_pending = self.connection.query(obd.commands.GET_CURRENT_DTC)
+            res_pending = self.connection.query(obd.commands.GET_CURRENT_DTC, force=True)
             if not res_pending.is_null() and res_pending.value:
                 for code in res_pending.value:
                     dtc_groups["ENGINE - PENDING (Intermittent)"].append(code)
 
-            # --- 2. SCAN TRANSMISSION (7E1 / 7E2) ---
             for target in ["7E1", "7E2"]:
                 self.log(f"Scanning Transmission ({target})...")
-                self.connection.query(obd.commands.AT.SH + target)
-                time.sleep(0.1)
+                self._set_header(target)
+                time.sleep(0.3)
 
-                res_tcu = self.connection.query(obd.commands.GET_DTC)
+                res_tcu = self.connection.query(obd.commands.GET_DTC, force=True)
 
                 if not res_tcu.is_null() and res_tcu.value:
                     for code in res_tcu.value:
-                        dtc_groups["TRANSMISSION (TCU)"].append(code)
+
+                        if code not in dtc_groups["ENGINE - CONFIRMED (Permanent)"]:
+                            dtc_groups["TRANSMISSION (TCU)"].append(code)
 
         except Exception as e:
             self.log(f"Scan Error: {e}")
         finally:
-            self.connection.query(obd.commands.AT.SH + "7E0")
+            self._set_header("7E0")
 
         self.log("Scan Complete.")
         return dtc_groups
 
     def get_freeze_frame_snapshot(self, sensor_list):
+        """Reads current values for all sensors to save a snapshot."""
         self.log("Reading Freeze Frame Data...")
         snapshot = {}
+
         if self.simulation:
-            time.sleep(1)
-            return {"RPM": 4520, "SPEED": 110, "DTC": "P0300"}
+
+            for name in sensor_list:
+                snapshot[name] = self._simulate_data(name)
+            return snapshot
 
         if self.connection and self.connection.is_connected():
             for name in sensor_list:
+
                 val = self.query_sensor(name)
                 if val is not None:
                     snapshot[name] = val
@@ -244,7 +256,14 @@ class OBDHandler:
 
         if self.connection and self.connection.is_connected():
             try:
+
+                self._set_header("7E0")
                 self.connection.query(obd.commands.CLEAR_DTC)
+                self._set_header("7E1")
+                self.connection.query(obd.commands.CLEAR_DTC)
+
+                self._set_header("7E0")
+
                 self.log("Command Sent: CLEAR_DTC")
                 return True
             except Exception as e:

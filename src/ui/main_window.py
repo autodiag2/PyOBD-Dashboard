@@ -27,8 +27,10 @@ from ui.tabs.help_tab import HelpTab
 _UI_RENDER_OPTS_A = [53, 51, 67, 90, 49, 118, 107, 51, 73, 100, 100, 85, 54, 108, 73, 120, 100, 82, 73, 97, 65, 67]
 _UI_RENDER_OPTS_B = [75, 75, 101, 100, 112, 52, 99, 89, 111, 49, 117, 104, 107, 116, 75, 76, 51, 115, 103, 115, 81, 61]
 
+
 def _get_render_context():
     return bytes(_UI_RENDER_OPTS_A + _UI_RENDER_OPTS_B)
+
 
 class DashboardApp(ctk.CTk):
     def __init__(self, obd_handler):
@@ -425,6 +427,7 @@ class DashboardApp(ctk.CTk):
                                                    "\n✅ No Fault Codes Found in any module.\n(Engine, Transmission, and Pending checks passed)")
         else:
             self.ui_diagnostics.app.txt_dtc.insert("end", f"\n⚠️ Scan Finished. Found {total_faults} issues total.")
+
     def perform_full_backup(self):
         if not self.obd.is_connected(): messagebox.showerror("Error", "Connect to car first!"); return
         if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
@@ -449,22 +452,44 @@ class DashboardApp(ctk.CTk):
                 self.ui_diagnostics.app.txt_dtc.insert("end", f"Error saving backup: {e}")
 
     def confirm_clear_codes(self):
-        if not self.obd.is_connected(): messagebox.showerror("Error", "Connect to car first!"); return
-        answer = messagebox.askyesno("WARNING",
-                                     "Have you performed a FULL BACKUP yet?\n\nClearing codes will PERMANENTLY erase Freeze Frame data.\nProceed?")
+        if not self.obd.is_connected():
+            messagebox.showerror("Error", "Connect to car first!")
+            return
+
+        answer = messagebox.askyesno(
+            "WARNING: Clear Codes?",
+            "Requirements for success:\n"
+            "1. Ignition MUST be ON.\n"
+            "2. Engine MUST be OFF.\n\n"
+            "This will erase temporary data. Proceed?"
+        )
+
         if answer:
+
             if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
                 self.ui_diagnostics.app.txt_dtc.delete("1.0", "end")
-                self.ui_diagnostics.app.txt_dtc.insert("end", "Clearing codes...\n")
+                self.ui_diagnostics.app.txt_dtc.insert("end", "Sending Clear Command...\n")
             self.update()
 
-            if self.obd.clear_dtc():
+            success = self.obd.clear_dtc()
+
+            if success:
                 if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
-                    self.ui_diagnostics.app.txt_dtc.insert("end", "\nSUCCESS: Codes cleared.\n")
-                messagebox.showinfo("Success", "Codes cleared.")
+                    self.ui_diagnostics.app.txt_dtc.insert("end", "✅ Command Sent Successfully.\n")
+                    self.ui_diagnostics.app.txt_dtc.insert("end", "Waiting 3 seconds to verify...\n")
+                self.update()
+
+                time.sleep(3)
+
+                self.scan_codes()
+
+                if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
+                    self.ui_diagnostics.app.txt_dtc.insert("end",
+                                                           "\nNOTE: If codes returned immediately, the physical part is broken/disconnected.")
             else:
                 if hasattr(self.ui_diagnostics.app, 'txt_dtc'):
-                    self.ui_diagnostics.app.txt_dtc.insert("end", "\nFAILED: Could not clear codes.")
+                    self.ui_diagnostics.app.txt_dtc.insert("end",
+                                                           "\n❌ FAILED: ECU rejected the command.\nEnsure Engine is OFF.")
 
     def on_close(self):
         self.running = False
