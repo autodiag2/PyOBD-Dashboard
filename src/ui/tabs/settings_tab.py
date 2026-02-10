@@ -7,6 +7,7 @@ from ui.theme import ThemeManager
 from elm import Elm
 import threading
 import socket
+from translation import translate, get_available_languages, set_language
 
 def _port_busy(host: str, port: int, timeout_s: float = 0.15) -> bool:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -47,8 +48,10 @@ class SettingsTab:
         self.sim = None
         self.sim_location = None
 
+        self.var_lang = ctk.StringVar(value=self.app.config.get("lang", "en"))
+
         self.filter_var = ctk.StringVar(value="Standard")
-        ctk.CTkLabel(frame_top, text="Show Pack:", font=("Arial", 12)).pack(side="left", padx=5)
+        ctk.CTkLabel(frame_top, text=translate("ui_tab_settings_show_pack"), font=("Arial", 12)).pack(side="left", padx=5)
         self.app.combo_filter = ctk.CTkOptionMenu(
             frame_top,
             variable=self.filter_var,
@@ -59,13 +62,13 @@ class SettingsTab:
 
         ctk.CTkButton(
             frame_top,
-            text="Manage Pro Packs",
+            text=translate("ui_tab_settings_manage_pro_packs"),
             fg_color="purple",
             width=150,
             command=self.open_pack_manager,
         ).pack(side="right")
 
-        ctk.CTkLabel(frame_top, text="Theme:", font=("Arial", 12)).pack(side="right", padx=5)
+        ctk.CTkLabel(frame_top, text=translate("ui_tab_settings_theme"), font=("Arial", 12)).pack(side="right", padx=5)
         self.var_theme = ctk.StringVar(value=self.app.config.get("theme", "Cyber"))
 
         theme_names = sorted(list(ThemeManager.THEMES.keys()))
@@ -86,7 +89,7 @@ class SettingsTab:
         frame_all_show.pack(side="right", padx=5)
         ctk.CTkButton(
             frame_all_show,
-            text="All",
+            text=translate("ui_tab_settings_sensors_show_all"),
             width=30,
             height=15,
             font=("Arial", 8),
@@ -94,20 +97,20 @@ class SettingsTab:
         ).pack()
         ctk.CTkButton(
             frame_all_show,
-            text="None",
+            text=translate("ui_tab_settings_sensors_show_none"),
             width=30,
             height=15,
             font=("Arial", 8),
             fg_color="gray",
             command=lambda: self.toggle_all("show", False),
         ).pack()
-        ctk.CTkLabel(header_frame, text="Show", width=30).pack(side="right")
+        ctk.CTkLabel(header_frame, text=translate("ui_tab_settings_sensors_show"), width=30).pack(side="right")
 
         frame_all_log = ctk.CTkFrame(header_frame, fg_color="transparent")
         frame_all_log.pack(side="right", padx=5)
         ctk.CTkButton(
             frame_all_log,
-            text="All",
+            text=translate("ui_tab_settings_sensors_log_all"),
             width=30,
             height=15,
             font=("Arial", 8),
@@ -115,17 +118,17 @@ class SettingsTab:
         ).pack()
         ctk.CTkButton(
             frame_all_log,
-            text="None",
+            text=translate("ui_tab_settings_sensors_log_none"),
             width=30,
             height=15,
             font=("Arial", 8),
             fg_color="gray",
             command=lambda: self.toggle_all("log", False),
         ).pack()
-        ctk.CTkLabel(header_frame, text="Log", width=30).pack(side="right")
+        ctk.CTkLabel(header_frame, text=translate("ui_tab_settings_sensors_log"), width=30).pack(side="right")
 
-        ctk.CTkLabel(header_frame, text="Limit", width=80).pack(side="right", padx=5)
-        ctk.CTkLabel(header_frame, text="Sensor Name", width=200, anchor="w").pack(side="left", padx=10)
+        ctk.CTkLabel(header_frame, text=translate("ui_tab_settings_sensors_limit"), width=80).pack(side="right", padx=5)
+        ctk.CTkLabel(header_frame, text=translate("ui_tab_settings_sensors_name"), width=200, anchor="w").pack(side="left", padx=10)
 
         self.settings_scroll = ctk.CTkScrollableFrame(self.frame)
         self.settings_scroll.pack(fill="both", expand=True, padx=20, pady=5)
@@ -141,28 +144,38 @@ class SettingsTab:
 
         frame_log = ctk.CTkFrame(self.frame)
         frame_log.pack(fill="x", padx=20, pady=20)
-        self.app.lbl_path = ctk.CTkLabel(frame_log, text=f"Save Path: {self.app.logger.log_dir}")
+        self.app.lbl_path = ctk.CTkLabel(frame_log, text=translate("ui_tab_settings_log_path").format(self.app.logger.log_dir))
         self.app.lbl_path.pack(side="left", padx=10)
-        ctk.CTkButton(frame_log, text="Change Folder", command=self.app.change_log_folder).pack(side="right", padx=10)
+        ctk.CTkButton(frame_log, text=translate("ui_tab_settings_log_change_folder"), command=self.app.change_log_folder).pack(side="right", padx=10)
 
         ctk.CTkSwitch(
             frame_log,
-            text="Developer Mode",
+            text=translate("ui_tab_settings_dev_mode"),
             variable=self.app.var_dev_mode,
             command=self.app.refresh_dev_mode_visibility,
         ).pack(side="right", padx=20)
+
+        ctk.CTkLabel(frame_top, text=translate("ui_tab_settings_language"), font=("Arial", 12)).pack(side="left", padx=5)
+        self.combo_lang = ctk.CTkOptionMenu(
+            frame_top,
+            variable=self.var_lang,
+            values=get_available_languages(),
+            command=lambda l: (set_language(l), self.app.config.update({"lang": l}), ConfigManager.save_config(self.app.config)),
+            width=70,
+        )
+        self.combo_lang.pack(side="right", padx=5)
 
     def _build_sim_section(self):
         sim = ctk.CTkFrame(self.frame)
         sim.pack(fill="x", padx=20, pady=(10, 0))
 
-        ctk.CTkLabel(sim, text="Simulation", font=("Arial", 12, "bold")).grid(
+        ctk.CTkLabel(sim, text=translate("ui_tab_settings_sim"), font=("Arial", 12, "bold")).grid(
             row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(10, 6)
         )
 
         self.var_sim_mode = ctk.StringVar(value=self.app.config.get("sim_mode", "serial"))
 
-        ctk.CTkLabel(sim, text="Mode:", anchor="w").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        ctk.CTkLabel(sim, text=translate("ui_tab_settings_sim_mode"), anchor="w").grid(row=1, column=0, sticky="w", padx=10, pady=6)
         self.combo_sim_mode = ctk.CTkOptionMenu(
             sim,
             variable=self.var_sim_mode,
@@ -171,7 +184,7 @@ class SettingsTab:
         )
         self.combo_sim_mode.grid(row=1, column=1, sticky="w", padx=10, pady=6)
 
-        self.btn_sim_toggle = ctk.CTkButton(sim, text="Start", fg_color="green", width=120, command=self._toggle_sim)
+        self.btn_sim_toggle = ctk.CTkButton(sim, text=translate("ui_tab_settings_sim_start"), fg_color="green", width=120, command=self._toggle_sim)
         self.btn_sim_toggle.grid(row=1, column=3, rowspan=2, sticky="e", padx=10, pady=6)
 
         sim.grid_columnconfigure(2, weight=1)
@@ -180,10 +193,10 @@ class SettingsTab:
 
     def _sync_sim_button(self):
         if self.sim:
-            self.btn_sim_toggle.configure(text="Stop", fg_color="red")
+            self.btn_sim_toggle.configure(text=translate("ui_tab_settings_sim_stop"), fg_color="red")
             self.combo_sim_mode.configure(state="disabled")
         else:
-            self.btn_sim_toggle.configure(text="Start", fg_color="green")
+            self.btn_sim_toggle.configure(text=translate("ui_tab_settings_sim_start"), fg_color="green")
             self.combo_sim_mode.configure(state="normal")
 
     def _toggle_sim(self):
@@ -271,11 +284,11 @@ class SettingsTab:
 
     def open_pack_manager(self):
         window = ctk.CTkToplevel(self.app)
-        window.title("Manage Pro Packs")
+        window.title(translate("ui_tab_settings_pack_manager_window_title"))
         window.geometry("400x400")
         window.attributes("-topmost", True)
 
-        ctk.CTkLabel(window, text=f"Scan Path:\n{PRO_PACK_DIR}", font=("Arial", 10), text_color="gray").pack(pady=5)
+        ctk.CTkLabel(window, text=translate("ui_tab_settings_pack_manager_scan_path").format(PRO_PACK_DIR), font=("Arial", 10), text_color="gray").pack(pady=5)
 
         scroll = ctk.CTkScrollableFrame(window)
         scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -294,7 +307,7 @@ class SettingsTab:
                         available_files.append(rel)
 
         if not available_files:
-            ctk.CTkLabel(scroll, text="No .json files found.").pack()
+            ctk.CTkLabel(scroll, text=translate("ui_tab_settings_pack_manager_no_files_found")).pack()
 
         pack_vars = {}
 
@@ -327,7 +340,7 @@ class SettingsTab:
             pack_vars[f] = var
             ctk.CTkCheckBox(row, text=f, variable=var).pack(side="left", padx=10, pady=5)
 
-        ctk.CTkButton(footer, text="Save & Reload", fg_color="green", command=on_save).pack(pady=10)
+        ctk.CTkButton(footer, text=translate("ui_tab_settings_pack_manager_save_reload"), fg_color="green", command=on_save).pack(pady=10)
 
     def update_filter_options(self):
         packs = sorted(list(set(self.app.sensor_sources.values())))
