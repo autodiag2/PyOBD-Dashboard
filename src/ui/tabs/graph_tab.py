@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
+from translation import translate
 
 class GraphTab:
     def __init__(self, parent_frame, app_instance):
@@ -15,23 +15,23 @@ class GraphTab:
 
         ctk.CTkLabel(
             controls,
-            text="Left Axis (Blue):",
+            text=translate("ui_tab_graph_left_axis"),
             text_color="#3498db",
             font=("Arial", 12, "bold"),
         ).pack(side="left", padx=5)
-        self.app.menu_left = ctk.CTkOptionMenu(controls, variable=self.app.var_graph_left, values=["RPM"])
+        self.app.menu_left = ctk.CTkOptionMenu(controls, variable=self.app.var_graph_left, values=[translate("ui_tab_graph_left_axis_value_rpm")])
         self.app.menu_left.pack(side="left", padx=5)
 
         ctk.CTkLabel(
             controls,
-            text="Right Axis (Red):",
+            text=translate("ui_tab_graph_right_axis"),
             text_color="#e74c3c",
             font=("Arial", 12, "bold"),
         ).pack(side="left", padx=5)
-        self.app.menu_right = ctk.CTkOptionMenu(controls, variable=self.app.var_graph_right, values=["SPEED"])
+        self.app.menu_right = ctk.CTkOptionMenu(controls, variable=self.app.var_graph_right, values=[translate("ui_tab_graph_right_axis_value_speed")])
         self.app.menu_right.pack(side="left", padx=5)
 
-        self.btn_pause = ctk.CTkButton(controls, text="Pause", width=90, command=self.toggle_pause)
+        self.btn_pause = ctk.CTkButton(controls, text=translate("ui_tab_graph_pause"), width=90, command=self.toggle_pause)
         self.btn_pause.pack(side="right", padx=5)
 
         self.fig, self.ax1 = plt.subplots(figsize=(6, 4), dpi=100)
@@ -57,7 +57,7 @@ class GraphTab:
 
     def toggle_pause(self):
         self.paused = not self.paused
-        self.btn_pause.configure(text=("Play" if self.paused else "Pause"))
+        self.btn_pause.configure(text=(translate("ui_tab_graph_play") if self.paused else translate("ui_tab_graph_pause")))
 
     def update(self):
         if self.paused:

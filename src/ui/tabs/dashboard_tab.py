@@ -3,6 +3,7 @@ import math
 from ui.tooltip import ToolTip
 from ui.theme import ThemeManager
 from ui.widgets.analog_gauge import AnalogGauge
+from translation import translate
 
 class DashboardTab:
     def __init__(self, parent_frame, app_instance):
@@ -16,7 +17,8 @@ class DashboardTab:
         self.frame_controls = ctk.CTkFrame(self.frame, height=50, fg_color=ThemeManager.get("BACKGROUND"))
         self.frame_controls.pack(fill="x", padx=10, pady=5)
 
-        ctk.CTkLabel(self.frame_controls, text="Port:", font=("Arial", 12),
+        
+        ctk.CTkLabel(self.frame_controls, text=translate("ui_tab_dashboard_port"), font=("Arial", 12),
                      text_color=ThemeManager.get("TEXT_MAIN")).pack(side="left", padx=(10, 5))
 
         self.app.var_port = getattr(self.app, "var_port", ctk.StringVar(value="Auto"))
@@ -36,7 +38,7 @@ class DashboardTab:
         )
         self.combo_ports.pack(side="left", padx=5)
 
-        ctk.CTkLabel(self.frame_controls, text="Baud:", font=("Arial", 12),
+        ctk.CTkLabel(self.frame_controls, text=translate("ui_tab_dashboard_baud"), font=("Arial", 12),
                      text_color=ThemeManager.get("TEXT_MAIN")).pack(side="left", padx=(10, 5))
 
         if not hasattr(self.app, "var_baud"):
@@ -62,7 +64,7 @@ class DashboardTab:
 
         self.app.btn_connect = ctk.CTkButton(
             self.frame_controls,
-            text="CONNECT",
+            text=translate("ui_tab_dashboard_connect"),
             fg_color=ThemeManager.get("ACCENT"),
             text_color=ThemeManager.get("BACKGROUND"),
             hover_color=ThemeManager.get("ACCENT_DIM"),
@@ -75,7 +77,7 @@ class DashboardTab:
                                       fg_color=ThemeManager.get("CARD_BG"))
         self.btn_next.pack(side="right", padx=5)
 
-        self.lbl_page = ctk.CTkLabel(self.frame_controls, text="Page 1/1", width=80,
+        self.lbl_page = ctk.CTkLabel(self.frame_controls, text=translate("ui_tab_dashboard_page").format(1, 1), width=80,
                                      text_color=ThemeManager.get("TEXT_MAIN"))
         self.lbl_page.pack(side="right", padx=5)
 
@@ -166,7 +168,9 @@ class DashboardTab:
         if self.current_page >= self.total_pages:
             self.current_page = max(0, self.total_pages - 1)
 
-        self.lbl_page.configure(text=f"Page {self.current_page + 1}/{self.total_pages}")
+        self.lbl_page.configure(
+            text=translate("ui_tab_dashboard_page").format(self.current_page + 1, self.total_pages)
+        )
 
         start_idx = self.current_page * self.items_per_page
         end_idx = start_idx + self.items_per_page
